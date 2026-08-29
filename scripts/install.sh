@@ -4,7 +4,7 @@ set -euo pipefail
 
 # --------------------------------------------------------------------------------
 # Variables
-REPO_URL="https://github.com/throwaway31265/free-sleep/archive/refs/heads/main.zip"
+REPO_URL="https://github.com/M4v3R1cK-dev/free-sleep/archive/refs/heads/main.zip"
 ZIP_FILE="free-sleep.zip"
 REPO_DIR="/home/dac/free-sleep"
 SERVER_DIR="$REPO_DIR/server"
@@ -228,6 +228,13 @@ systemctl start free-sleep.service
 
 echo "Checking free-sleep service status..."
 systemctl status free-sleep.service --no-pager || true
+echo ""
+
+# --------------------------------------------------------------------------------
+# Setup Wi-Fi provisioning service
+
+sh "$REPO_DIR/scripts/setup_wifi_provisioning_service.sh"
+
 echo ""
 
 # -----------------------------------------------------------------------------------------------------
