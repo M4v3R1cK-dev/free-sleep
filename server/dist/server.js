@@ -1,3 +1,5 @@
+
+!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="9db73c62-f014-5de8-b792-af2dbfb404df")}catch(e){}}();
 import './instrument.js';
 import express from 'express';
 import schedule from 'node-schedule';
@@ -137,3 +139,4 @@ startServer().catch((err) => {
     process.exit(1);
 });
 //# sourceMappingURL=server.js.map
+//# debugId=9db73c62-f014-5de8-b792-af2dbfb404df
