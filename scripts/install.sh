@@ -230,6 +230,13 @@ echo "Checking free-sleep service status..."
 systemctl status free-sleep.service --no-pager || true
 echo ""
 
+# --------------------------------------------------------------------------------
+# Setup Wi-Fi provisioning service
+
+sh "$REPO_DIR/scripts/setup_wifi_provisioning_service.sh"
+
+echo ""
+
 # -----------------------------------------------------------------------------------------------------
 # Create systemd service for updating
 
