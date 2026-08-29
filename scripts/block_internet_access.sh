@@ -19,18 +19,21 @@ else
   echo -e "\e[33mSentry error logs will NOT be sent to Sentry unless error logging is explicitly enabled in the UI. (It's off by default)\e[0m"
   echo -e "\e[33mIf you'd like to block Sentry servers, run: 'ALLOW_SENTRY=false sh scripts/block_internet_access.sh'\e[0m"
   echo -e "\e[33m\e[0m"
+
   # --- US IPs ---
-  iptables -C INPUT  -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
-  iptables -I INPUT  -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+  iptables -C INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
+  iptables -I INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+
   iptables -C OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT 2>/dev/null || \
   iptables -I OUTPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
 
   iptables -A OUTPUT -d 35.186.247.156 -j ACCEPT
   iptables -A OUTPUT -d 34.120.195.249 -j ACCEPT
-  iptables -A OUTPUT -d 34.36.122.224  -j ACCEPT
+  iptables -A OUTPUT -d 34.36.122.224 -j ACCEPT
   iptables -A OUTPUT -d 34.36.87.148 -j ACCEPT
   iptables -A OUTPUT -d 34.120.62.213 -j ACCEPT
   iptables -A OUTPUT -d 130.211.36.74 -j ACCEPT
+
   echo "Sentry error logging IP rules applied successfully."
 fi
 
@@ -53,7 +56,7 @@ iptables -I OUTPUT -p udp --dport 123 -j ACCEPT
 iptables -I INPUT -p udp --sport 123 -j ACCEPT
 
 echo "Updating the timesyncd config"
-# New configuration content
+
 cat > /etc/systemd/timesyncd.conf <<EOF
 [Time]
 NTP=pool.ntp.org 0.pool.ntp.org 1.pool.ntp.org 2.pool.ntp.org 3.pool.ntp.org
@@ -66,19 +69,24 @@ EOF
 # Restart timesyncd to apply changes
 systemctl restart systemd-timesyncd
 
-
 # Allow localhost (loopback) traffic so local apps can talk to each other
-iptables -A INPUT  -i lo -j ACCEPT
+iptables -A INPUT -i lo -j ACCEPT
 iptables -A OUTPUT -o lo -j ACCEPT
 
-# Block everything else
+# Block unsolicited inbound traffic
 iptables -A INPUT -j DROP
-iptables -A OUTPUT -j DROP
+
+# Reject outbound WAN traffic immediately rather than silently dropping it.
+# Frankenfirmware can otherwise stall during boot waiting for TCP timeouts.
+iptables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset
+iptables -A OUTPUT -p udp -j REJECT --reject-with icmp-port-unreachable
+iptables -A OUTPUT -j REJECT
 
 # Save rules
 iptables-save > /etc/iptables/iptables.rules
 
 echo "Configuring IPv6 rules..."
+
 # Allow local traffic for IPv6
 ip6tables -A INPUT -s fe80::/10 -j ACCEPT
 ip6tables -A OUTPUT -d fe80::/10 -j ACCEPT
@@ -89,10 +97,13 @@ ip6tables -A OUTPUT -d fd00::/8 -j ACCEPT
 ip6tables -I OUTPUT -p udp --dport 123 -j ACCEPT
 ip6tables -I INPUT -p udp --sport 123 -j ACCEPT
 
-# Block everything else (IPv6)
+# Block unsolicited inbound traffic
 ip6tables -A INPUT -j DROP
-ip6tables -A OUTPUT -j DROP
+
+# Reject outbound WAN traffic immediately
+ip6tables -A OUTPUT -j REJECT
+
+# Save IPv6 rules
 ip6tables-save > /etc/iptables/ip6tables.rules
 
 echo "Blocked WAN internet access successfully!"
-
