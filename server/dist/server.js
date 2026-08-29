@@ -1,10 +1,9 @@
-
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="9db73c62-f014-5de8-b792-af2dbfb404df")}catch(e){}}();
 import './instrument.js';
 import express from 'express';
 import schedule from 'node-schedule';
 import logger from './logger.js';
 import { connectFranken, disconnectFranken } from './8sleep/frankenServer.js';
+import { wait } from './8sleep/promises.js';
 import { FrankenMonitor } from './8sleep/frankenMonitor.js';
 import './jobs/jobScheduler.js';
 // Setup code
@@ -22,13 +21,16 @@ let frankenMonitor;
 async function disconnectPrisma() {
     try {
         logger.debug('Flushing SQLite');
-        // Flush WAL into main DB and truncate WAL file (no-op if not in WAL mode)
+        // Flush WAL into main DB and truncate WAL file
+        // (no-op if not in WAL mode)
         await prisma.$queryRawUnsafe('PRAGMA wal_checkpoint(TRUNCATE)');
         logger.debug('Flushed SQLite');
     }
     catch (error) {
         logger.error('Error flushing SQLite');
-        const message = error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error
+            ? error.message
+            : String(error);
         logger.error(message);
     }
     try {
@@ -38,7 +40,9 @@ async function disconnectPrisma() {
     }
     catch (error) {
         logger.error('Error disconnecting from Prisma');
-        const message = error instanceof Error ? error.message : String(error);
+        const message = error instanceof Error
+            ? error.message
+            : String(error);
         logger.error(message);
     }
 }
@@ -46,10 +50,11 @@ async function disconnectPrisma() {
 async function gracefulShutdown(signal) {
     logger.debug(`\nReceived ${signal}. Initiating graceful shutdown...`);
     let finishedExiting = false;
-    // Force shutdown after 10 seconds
+    // Force shutdown after 15 seconds
     setTimeout(() => {
-        if (finishedExiting)
+        if (finishedExiting) {
             return;
+        }
         const error = new Error('Could not close connections in time. Forcing shutdown.');
         logger.error({ error });
         process.exit(1);
@@ -70,21 +75,82 @@ async function gracefulShutdown(signal) {
             logger.debug('Successfully closed Franken components.');
         }
     }
-    catch (err) {
-        logger.error(`Error during shutdown: ${err}`);
+    catch (error) {
+        logger.error(`Error during shutdown: ${error}`);
     }
     finishedExiting = true;
     logger.debug('Exiting now...');
     process.exit(0);
 }
-// Initialize Franken on server startup
+//
+// Franken startup
+//
+// On this Pod, the Unix socket can connect before the underlying
+// hardware is actually ready to answer DEVICE_STATUS.
+//
+// Give the first connection a short settling period, then confirm
+// real hardware communication before declaring Franken healthy.
+//
+// If that first connection is stale, close it and allow the existing
+// Franken connection retry logic to create a fresh socket and wait
+// for frankenfirmware to reconnect.
+//
+const FRANKEN_READY_MAX_ATTEMPTS = 8;
+const FRANKEN_READY_RETRY_DELAY_MS = 5_000;
+const FRANKEN_INITIAL_SETTLE_DELAY_MS = 30_000;
 async function initFranken() {
     logger.info('Initializing Franken on startup...');
     serverStatus.status.franken.status = 'started';
-    // Force creation of the Franken and FrankenServer so it’s ready before we listen
-    await connectFranken();
-    serverStatus.status.franken.status = 'healthy';
-    logger.info('Franken has been initialized successfully.');
+    let lastError;
+    for (let attempt = 1; attempt <= FRANKEN_READY_MAX_ATTEMPTS; attempt++) {
+        try {
+            logger.info(`Checking Franken hardware readiness... attempt ${attempt}/${FRANKEN_READY_MAX_ATTEMPTS}`);
+            const franken = await connectFranken();
+            /*
+             * The first socket connection happens very early during boot.
+             *
+             * Give the Pod hardware a little time before sending the first
+             * DEVICE_STATUS request.
+             */
+            if (attempt === 1) {
+                logger.info(`Franken socket connected. Waiting ${FRANKEN_INITIAL_SETTLE_DELAY_MS / 1000}s for hardware startup.`);
+                await wait(FRANKEN_INITIAL_SETTLE_DELAY_MS);
+            }
+            /*
+             * Socket connected does not necessarily mean hardware ready.
+             *
+             * Only declare Franken healthy once a genuine DEVICE_STATUS
+             * request succeeds.
+             */
+            await franken.getDeviceStatus(false);
+            serverStatus.status.franken.status = 'healthy';
+            serverStatus.status.franken.message = '';
+            logger.info('Franken hardware is ready.');
+            return;
+        }
+        catch (error) {
+            lastError = error;
+            const message = error instanceof Error
+                ? error.message
+                : String(error);
+            logger.warn(`Franken hardware is not ready yet: ${message}`);
+            /*
+             * Drop the failed/stale Free Sleep side of the connection.
+             *
+             * connectFranken() will then create a fresh socket server and
+             * wait for frankenfirmware to reconnect.
+             */
+            await disconnectFranken();
+            if (attempt <
+                FRANKEN_READY_MAX_ATTEMPTS) {
+                await wait(FRANKEN_READY_RETRY_DELAY_MS);
+            }
+        }
+    }
+    if (lastError instanceof Error) {
+        throw lastError;
+    }
+    throw new Error('Franken hardware did not become ready during startup.');
 }
 const initFrankenMonitor = () => {
     logger.info('Starting franken monitor...');
@@ -103,17 +169,21 @@ async function startServer() {
     });
     serverStatus.status.express.status = 'healthy';
     serverStatus.status.logger.status = 'healthy';
-    // Initialize Franken once before listening
+    // Initialize Franken on startup
     if (!config.remoteDevMode) {
         void initFranken()
             .then(() => {
             setupSentryTags();
             initFrankenMonitor();
         })
-            .catch(error => {
-            serverStatus.status.franken.status = 'failed';
-            const message = error instanceof Error ? error.message : String(error);
-            serverStatus.status.franken.message = message;
+            .catch((error) => {
+            serverStatus.status.franken.status =
+                'failed';
+            const message = error instanceof Error
+                ? error.message
+                : String(error);
+            serverStatus.status.franken.message =
+                message;
             logger.error(error);
         });
     }
@@ -123,9 +193,9 @@ async function startServer() {
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
     // Handle uncaught exceptions and rejections
-    process.on('uncaughtException', async (err) => {
-        console.error('Uncaught Exception:', err);
-        logger.error(err);
+    process.on('uncaughtException', async (error) => {
+        console.error('Uncaught Exception:', error);
+        logger.error(error);
         await gracefulShutdown('uncaughtException');
     });
     process.on('unhandledRejection', async (reason, promise) => {
@@ -134,9 +204,9 @@ async function startServer() {
     });
 }
 // Actually start the server
-startServer().catch((err) => {
-    logger.error('Failed to start server:', err);
+startServer()
+    .catch((error) => {
+    logger.error('Failed to start server:', error);
     process.exit(1);
 });
 //# sourceMappingURL=server.js.map
-//# debugId=9db73c62-f014-5de8-b792-af2dbfb404df

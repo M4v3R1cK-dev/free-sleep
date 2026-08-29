@@ -1,5 +1,3 @@
-
-!function(){try{var e="undefined"!=typeof window?window:"undefined"!=typeof global?global:"undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:{},n=(new e.Error).stack;n&&(e._sentryDebugIds=e._sentryDebugIds||{},e._sentryDebugIds[n]="393ca830-5bdf-555c-b1b0-feef86779868")}catch(e){}}();
 import moment from 'moment-timezone';
 import logger from '../logger.js';
 import settingsDB from '../db/settings.js';
@@ -78,8 +76,9 @@ export class FrankenMonitor {
     async frankenLoop() {
         const franken = await connectFranken();
         this.deviceStatus = await franken.getDeviceStatus(false);
-        let hasGestures = this.deviceStatus.coverVersion !== Version.Pod3;
-        let waitTime = hasGestures ? 2_000 : 60_000;
+        let hasGestures = this.deviceStatus.coverVersion === Version.Pod4 ||
+            this.deviceStatus.coverVersion === Version.Pod5;
+        let waitTime = hasGestures ? 2_000 : 20_000;
         if (hasGestures) {
             this.deviceStatus = await franken.getDeviceStatus(true);
             logger.debug(`Gestures supported for ${this.deviceStatus.coverVersion}`);
@@ -91,8 +90,10 @@ export class FrankenMonitor {
         while (this.isRunning) {
             try {
                 while (this.isRunning) {
-                    hasGestures = this.deviceStatus.coverVersion !== Version.Pod3;
-                    waitTime = hasGestures ? 2_000 : 60_000;
+                    hasGestures =
+                        this.deviceStatus.coverVersion === Version.Pod4 ||
+                            this.deviceStatus.coverVersion === Version.Pod5;
+                    waitTime = hasGestures ? 2_000 : 20_000;
                     await wait(waitTime);
                     if (!this.isRunning)
                         break;
@@ -120,4 +121,3 @@ export class FrankenMonitor {
     }
 }
 //# sourceMappingURL=frankenMonitor.js.map
-//# debugId=393ca830-5bdf-555c-b1b0-feef86779868

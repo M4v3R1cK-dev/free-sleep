@@ -370,6 +370,21 @@ export async function connectToWifi(ssid, password, hiddenNetwork = false) {
      */
     await stopSetupHotspot();
     /*
+     * wlan0 has just changed from access point mode back to normal wifi.
+     *
+     * Give NetworkManager a moment to finish that change, then get a fresh
+     * scan before trying the selected network.
+     */
+    await wait(1500);
+    await tryRunNmcli([
+        'device',
+        'wifi',
+        'rescan',
+        'ifname',
+        WIFI_INTERFACE,
+    ]);
+    await wait(2500);
+    /*
      * Use a new temporary connection name while testing the new details.
      *
      * We do not delete the old working FreeSleep-WiFi profile first. If the

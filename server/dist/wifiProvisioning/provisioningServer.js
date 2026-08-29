@@ -460,7 +460,7 @@ function getSetupPage() {
         var ssid = '';
 
         if (hiddenNetwork.checked) {
-          ssid = manualSsid.value.trim();
+        ssid = manualSsid.value.trim();
         } else {
           ssid = wifiNetwork.value;
         }
