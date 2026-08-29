@@ -491,7 +491,6 @@ export async function connectToWifi(
   password: string,
   hiddenNetwork = false,
 ): Promise<boolean> {
-
   if (ssid === '') {
     return false;
   }
@@ -501,6 +500,24 @@ export async function connectToWifi(
    * The phone dropping off FreeSleep-Setup here is expected.
    */
   await stopSetupHotspot();
+
+  /*
+   * wlan0 has just changed from access point mode back to normal wifi.
+   *
+   * Give NetworkManager a moment to finish that change, then get a fresh
+   * scan before trying the selected network.
+   */
+  await wait(1500);
+
+  await tryRunNmcli([
+    'device',
+    'wifi',
+    'rescan',
+    'ifname',
+    WIFI_INTERFACE,
+  ]);
+
+  await wait(2500);
 
   /*
    * Use a new temporary connection name while testing the new details.
@@ -546,14 +563,11 @@ export async function connectToWifi(
   }
 
   try {
-
     await runNmcli(
       connectionArguments,
       35000,
     );
-
   } catch {
-
     await tryRunNmcli([
       'connection',
       'delete',
@@ -569,7 +583,6 @@ export async function connectToWifi(
   );
 
   if (!connected) {
-
     await tryRunNmcli([
       'connection',
       'delete',

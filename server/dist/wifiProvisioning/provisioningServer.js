@@ -1,22 +1,7 @@
-import express, { Express, Request, Response } from 'express';
-import { Server } from 'http';
-
+import express from 'express';
 import logger from '../logger.js';
-
-import {
-  SETUP_IP_ADDRESS,
-  SETUP_SSID,
-  WifiNetwork,
-  connectToWifi,
-  scanWifiNetworks,
-  startSetupHotspot,
-  stopSetupHotspot,
-  waitForNormalWifiConnection,
-} from './networkManager.js';
-
-
+import { SETUP_IP_ADDRESS, SETUP_SSID, connectToWifi, scanWifiNetworks, startSetupHotspot, stopSetupHotspot, waitForNormalWifiConnection, } from './networkManager.js';
 const PROVISIONING_PORT = 80;
-
 /*
  * Give normal saved wifi 30 seconds to come back during boot.
  *
@@ -24,8 +9,6 @@ const PROVISIONING_PORT = 80;
  * Losing wifi later while the pod is running does not start this service.
  */
 const NORMAL_WIFI_WAIT_TIME = 30_000;
-
-
 /*
  * FreeSleep-Setup stays available for ten minutes.
  *
@@ -33,59 +16,41 @@ const NORMAL_WIFI_WAIT_TIME = 30_000;
  * than starting another fresh ten minutes.
  */
 const PROVISIONING_TIME = 10 * 60 * 1000;
-
-
 /*
  * Give the browser time to receive our response before wlan0 changes
  * from FreeSleep-Setup to the selected home wifi.
  */
 const CONNECTION_START_DELAY = 1000;
-
-
-let server: Server | undefined;
-let provisioningTimeout: ReturnType<typeof setTimeout> | undefined;
-
+let server;
+let provisioningTimeout;
 let provisioningEndsAt = 0;
-
-let cachedNetworks: WifiNetwork[] = [];
-
+let cachedNetworks = [];
 let connectionAttemptInProgress = false;
 let lastConnectionFailed = false;
 let shuttingDown = false;
-
-
 /*
  * Work out how much of the setup window is left.
  */
-function getMillisecondsRemaining(): number {
-
-  const remaining = provisioningEndsAt - Date.now();
-
-  if (remaining < 0) {
-    return 0;
-  }
-
-  return remaining;
+function getMillisecondsRemaining() {
+    const remaining = provisioningEndsAt - Date.now();
+    if (remaining < 0) {
+        return 0;
+    }
+    return remaining;
 }
-
-
 /*
  * The setup page only needs whole seconds for its countdown.
  */
-function getSecondsRemaining(): number {
-
-  return Math.ceil(getMillisecondsRemaining() / 1000);
+function getSecondsRemaining() {
+    return Math.ceil(getMillisecondsRemaining() / 1000);
 }
-
-
 /*
  * Everything for the setup page lives locally on the pod.
  *
  * No outside CSS, JavaScript, fonts or internet connection are needed.
  */
-function getSetupPage(): string {
-
-  return `
+function getSetupPage() {
+    return `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -495,7 +460,7 @@ function getSetupPage(): string {
         var ssid = '';
 
         if (hiddenNetwork.checked) {
-        ssid = manualSsid.value.trim();
+          ssid = manualSsid.value.trim();
         } else {
           ssid = wifiNetwork.value;
         }
@@ -575,465 +540,266 @@ function getSetupPage(): string {
 </html>
 `;
 }
-
-
 /*
  * Close the little setup web server if it is running.
  */
-function closeHttpServer(): Promise<void> {
-
-  return new Promise((resolve) => {
-
-    if (!server) {
-      resolve();
-      return;
-    }
-
-    server.close(() => {
-      server = undefined;
-      resolve();
+function closeHttpServer() {
+    return new Promise((resolve) => {
+        if (!server) {
+            resolve();
+            return;
+        }
+        server.close(() => {
+            server = undefined;
+            resolve();
+        });
     });
-  });
 }
-
-
 /*
  * Finish setup and clean up anything belonging to provisioning.
  *
  * This is used for success, timeout, shutdown and fatal errors.
  */
-async function stopProvisioning(exitCode: number): Promise<void> {
-
-  if (shuttingDown) {
-    return;
-  }
-
-  shuttingDown = true;
-
-  if (provisioningTimeout) {
-    clearTimeout(provisioningTimeout);
-    provisioningTimeout = undefined;
-  }
-
-  await stopSetupHotspot();
-  await closeHttpServer();
-
-  process.exit(exitCode);
+async function stopProvisioning(exitCode) {
+    if (shuttingDown) {
+        return;
+    }
+    shuttingDown = true;
+    if (provisioningTimeout) {
+        clearTimeout(provisioningTimeout);
+        provisioningTimeout = undefined;
+    }
+    await stopSetupHotspot();
+    await closeHttpServer();
+    process.exit(exitCode);
 }
-
-
 /*
  * Try the Wi-Fi details submitted by the setup page.
  *
  * The HTTP response has already gone back to the phone before this runs,
  * because changing wlan0 will disconnect the phone from FreeSleep-Setup.
  */
-async function runConnectionAttempt(
-  ssid: string,
-  password: string,
-  hiddenNetwork: boolean,
-): Promise<void> {
-
-  connectionAttemptInProgress = true;
-  lastConnectionFailed = false;
-
-  logger.info(`Trying provisioned Wi-Fi network: ${ssid}`);
-
-  const connected = await connectToWifi(
-    ssid,
-    password,
-    hiddenNetwork,
-  );
-
-  connectionAttemptInProgress = false;
-
-  if (connected) {
-
-    logger.info('Wi-Fi provisioning completed successfully.');
-
-    await stopProvisioning(0);
-    return;
-  }
-
-
-  lastConnectionFailed = true;
-
-  logger.warn(`Could not connect to provisioned Wi-Fi network: ${ssid}`);
-
-
-  /*
-   * Do not start another hotspot if the original ten minute setup
-   * window has already ended.
-   */
-  if (getMillisecondsRemaining() === 0) {
-
-    await stopProvisioning(0);
-    return;
-  }
-
-
-  try {
-
-    await startSetupHotspot();
-
-    logger.info(`${SETUP_SSID} restarted after failed Wi-Fi connection.`);
-
-  } catch (error) {
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : String(error);
-
-    logger.error(`Could not restart setup hotspot: ${message}`);
-
-    await stopProvisioning(1);
-  }
+async function runConnectionAttempt(ssid, password, hiddenNetwork) {
+    connectionAttemptInProgress = true;
+    lastConnectionFailed = false;
+    logger.info(`Trying provisioned Wi-Fi network: ${ssid}`);
+    const connected = await connectToWifi(ssid, password, hiddenNetwork);
+    connectionAttemptInProgress = false;
+    if (connected) {
+        logger.info('Wi-Fi provisioning completed successfully.');
+        await stopProvisioning(0);
+        return;
+    }
+    lastConnectionFailed = true;
+    logger.warn(`Could not connect to provisioned Wi-Fi network: ${ssid}`);
+    /*
+     * Do not start another hotspot if the original ten minute setup
+     * window has already ended.
+     */
+    if (getMillisecondsRemaining() === 0) {
+        await stopProvisioning(0);
+        return;
+    }
+    try {
+        await startSetupHotspot();
+        logger.info(`${SETUP_SSID} restarted after failed Wi-Fi connection.`);
+    }
+    catch (error) {
+        const message = error instanceof Error
+            ? error.message
+            : String(error);
+        logger.error(`Could not restart setup hotspot: ${message}`);
+        await stopProvisioning(1);
+    }
 }
-
-
 /*
  * Add the routes used by the setup page.
  */
-function setupRoutes(app: Express): void {
-
-  app.use(
-    express.json({
-      limit: '8kb',
-    }),
-  );
-
-
-  app.get(
-    '/api/networks',
-    (_request: Request, response: Response) => {
-
-      response.json({
-        networks: cachedNetworks,
-      });
-    },
-  );
-
-
-  app.get(
-    '/api/status',
-    (_request: Request, response: Response) => {
-
-      response.json({
-        connecting: connectionAttemptInProgress,
-        lastConnectionFailed: lastConnectionFailed,
-        secondsRemaining: getSecondsRemaining(),
-      });
-    },
-  );
-
-
-  app.post(
-    '/api/connect',
-    (request: Request, response: Response) => {
-
-      if (getMillisecondsRemaining() === 0) {
-
-        response.status(410).json({
-          error: 'The Wi-Fi setup window has expired.',
+function setupRoutes(app) {
+    app.use(express.json({
+        limit: '8kb',
+    }));
+    app.get('/api/networks', (_request, response) => {
+        response.json({
+            networks: cachedNetworks,
         });
-
-        return;
-      }
-
-
-      if (connectionAttemptInProgress) {
-
-        response.status(409).json({
-          error: 'The Pod is already trying a Wi-Fi connection.',
+    });
+    app.get('/api/status', (_request, response) => {
+        response.json({
+            connecting: connectionAttemptInProgress,
+            lastConnectionFailed: lastConnectionFailed,
+            secondsRemaining: getSecondsRemaining(),
         });
-
-        return;
-      }
-
-      const requestBody = request.body as Record<string, unknown>;
-
-      let ssid = '';
-
-      if (typeof requestBody.ssid === 'string') {
-        ssid = requestBody.ssid.trim();
-      }
-
-      let password = '';
-
-      if (typeof requestBody.password === 'string') {
-        password = requestBody.password;
-      }
-
-      const hiddenNetwork = requestBody.hiddenNetwork === true;
-
-
-      if (ssid === '') {
-
-        response.status(400).json({
-          error: 'A Wi-Fi network name is required.',
+    });
+    app.post('/api/connect', (request, response) => {
+        if (getMillisecondsRemaining() === 0) {
+            response.status(410).json({
+                error: 'The Wi-Fi setup window has expired.',
+            });
+            return;
+        }
+        if (connectionAttemptInProgress) {
+            response.status(409).json({
+                error: 'The Pod is already trying a Wi-Fi connection.',
+            });
+            return;
+        }
+        const requestBody = request.body;
+        let ssid = '';
+        if (typeof requestBody.ssid === 'string') {
+            ssid = requestBody.ssid.trim();
+        }
+        let password = '';
+        if (typeof requestBody.password === 'string') {
+            password = requestBody.password;
+        }
+        const hiddenNetwork = requestBody.hiddenNetwork === true;
+        if (ssid === '') {
+            response.status(400).json({
+                error: 'A Wi-Fi network name is required.',
+            });
+            return;
+        }
+        /*
+         * These are only sanity limits to stop a broken or malicious request
+         * dumping a huge amount of text into nmcli.
+         */
+        if (ssid.length > 128) {
+            response.status(400).json({
+                error: 'The Wi-Fi network name is too long.',
+            });
+            return;
+        }
+        if (password.length > 512) {
+            response.status(400).json({
+                error: 'The Wi-Fi password is too long.',
+            });
+            return;
+        }
+        /*
+         * Reply before changing wlan0.
+         *
+         * If we stopped the hotspot first the phone would disappear before
+         * its browser knew that the request had been accepted.
+         */
+        response.status(202).json({
+            accepted: true,
         });
-
-        return;
-      }
-
-
-      /*
-       * These are only sanity limits to stop a broken or malicious request
-       * dumping a huge amount of text into nmcli.
-       */
-      if (ssid.length > 128) {
-
-        response.status(400).json({
-          error: 'The Wi-Fi network name is too long.',
-        });
-
-        return;
-      }
-
-
-      if (password.length > 512) {
-
-        response.status(400).json({
-          error: 'The Wi-Fi password is too long.',
-        });
-
-        return;
-      }
-
-
-      /*
-       * Reply before changing wlan0.
-       *
-       * If we stopped the hotspot first the phone would disappear before
-       * its browser knew that the request had been accepted.
-       */
-      response.status(202).json({
-        accepted: true,
-      });
-
-
-      setTimeout(
-        () => {
-
-          void runConnectionAttempt(
-            ssid,
-            password,
-            hiddenNetwork,
-          );
-
-        },
-        CONNECTION_START_DELAY,
-      );
-    },
-  );
-
-
-  /*
-   * Anything else that reaches port 80 gets the setup page.
-   *
-   * This also means common captive portal probe URLs will at least get
-   * the page if their request reaches the Pod.
-   */
-  app.get(
-    '/{*splat}',
-    (_request: Request, response: Response) => {
-
-      response
-        .status(200)
-        .type('html')
-        .send(getSetupPage());
-    },
-  );
+        setTimeout(() => {
+            void runConnectionAttempt(ssid, password, hiddenNetwork);
+        }, CONNECTION_START_DELAY);
+    });
+    /*
+     * Anything else that reaches port 80 gets the setup page.
+     *
+     * This also means common captive portal probe URLs will at least get
+     * the page if their request reaches the Pod.
+     */
+    app.get('/{*splat}', (_request, response) => {
+        response
+            .status(200)
+            .type('html')
+            .send(getSetupPage());
+    });
 }
-
-
 /*
  * Start the web server after the hotspot already owns 192.168.4.1.
  */
-function startHttpServer(): Promise<void> {
-
-  return new Promise((resolve, reject) => {
-
-    const app = express();
-
-    setupRoutes(app);
-
-
-    server = app.listen(
-      PROVISIONING_PORT,
-      SETUP_IP_ADDRESS,
-      () => {
-
-        logger.info(
-          `Wi-Fi setup page running at http://${SETUP_IP_ADDRESS}`,
-        );
-
-        resolve();
-      },
-    );
-
-
-    server.once(
-      'error',
-      (error) => {
-        reject(error);
-      },
-    );
-  });
+function startHttpServer() {
+    return new Promise((resolve, reject) => {
+        const app = express();
+        setupRoutes(app);
+        server = app.listen(PROVISIONING_PORT, SETUP_IP_ADDRESS, () => {
+            logger.info(`Wi-Fi setup page running at http://${SETUP_IP_ADDRESS}`);
+            resolve();
+        });
+        server.once('error', (error) => {
+            reject(error);
+        });
+    });
 }
-
-
 /*
  * Ten minutes is up.
  *
  * If nmcli happens to be in the middle of a connection attempt, let that
  * attempt finish first rather than killing it halfway through.
  */
-async function provisioningExpired(): Promise<void> {
-
-  if (connectionAttemptInProgress) {
-
-    provisioningTimeout = setTimeout(
-      () => {
-        void provisioningExpired();
-      },
-      1000,
-    );
-
-    return;
-  }
-
-
-  logger.info('Wi-Fi provisioning window expired.');
-
-  await stopProvisioning(0);
+async function provisioningExpired() {
+    if (connectionAttemptInProgress) {
+        provisioningTimeout = setTimeout(() => {
+            void provisioningExpired();
+        }, 1000);
+        return;
+    }
+    logger.info('Wi-Fi provisioning window expired.');
+    await stopProvisioning(0);
 }
-
-
 /*
  * The Pod could not find a working saved Wi-Fi during boot.
  *
  * Scan while wlan0 is still in client mode, then turn it into the setup
  * access point and start the local setup page.
  */
-async function startProvisioningMode(): Promise<void> {
-
-  logger.info('No usable saved Wi-Fi connection found.');
-
-  try {
-
-    cachedNetworks = await scanWifiNetworks();
-
-    logger.info(
-      `Found ${cachedNetworks.length} Wi-Fi networks before starting setup mode.`,
-    );
-
-  } catch (error) {
-
-    cachedNetworks = [];
-
-    const message =
-      error instanceof Error
-        ? error.message
-        : String(error);
-
-    logger.warn(`Could not scan Wi-Fi networks: ${message}`);
-  }
-
-
-  await startSetupHotspot();
-
-
-  provisioningEndsAt =
-    Date.now() +
-    PROVISIONING_TIME;
-
-
-  await startHttpServer();
-
-
-  provisioningTimeout = setTimeout(
-    () => {
-      void provisioningExpired();
-    },
-    PROVISIONING_TIME,
-  );
-
-
-  logger.info(
-    `${SETUP_SSID} is available for ten minutes.`,
-  );
+async function startProvisioningMode() {
+    logger.info('No usable saved Wi-Fi connection found.');
+    try {
+        cachedNetworks = await scanWifiNetworks();
+        logger.info(`Found ${cachedNetworks.length} Wi-Fi networks before starting setup mode.`);
+    }
+    catch (error) {
+        cachedNetworks = [];
+        const message = error instanceof Error
+            ? error.message
+            : String(error);
+        logger.warn(`Could not scan Wi-Fi networks: ${message}`);
+    }
+    await startSetupHotspot();
+    provisioningEndsAt =
+        Date.now() +
+            PROVISIONING_TIME;
+    await startHttpServer();
+    provisioningTimeout = setTimeout(() => {
+        void provisioningExpired();
+    }, PROVISIONING_TIME);
+    logger.info(`${SETUP_SSID} is available for ten minutes.`);
 }
-
-
 /*
  * Clean the hotspot up if systemd stops this service or the Pod shuts down.
  */
-async function gracefulShutdown(signal: string): Promise<void> {
-
-  logger.info(`Wi-Fi provisioning received ${signal}.`);
-
-  await stopProvisioning(0);
+async function gracefulShutdown(signal) {
+    logger.info(`Wi-Fi provisioning received ${signal}.`);
+    await stopProvisioning(0);
 }
-
-
 /*
  * This runs once at boot.
  *
  * It is important that this is not a permanent network monitor.
  * Once the service finishes, a later Wi-Fi drop does not start an AP.
  */
-async function startProvisioningService(): Promise<void> {
-
-  logger.info('Checking saved Wi-Fi during boot.');
-
-
-  const normalWifiConnected = await waitForNormalWifiConnection(
-    NORMAL_WIFI_WAIT_TIME,
-  );
-
-
-  if (normalWifiConnected) {
-
-    logger.info('Saved Wi-Fi connected. Provisioning is not needed.');
-
-    return;
-  }
-
-
-  process.on(
-    'SIGTERM',
-    () => {
-      void gracefulShutdown('SIGTERM');
-    },
-  );
-
-
-  process.on(
-    'SIGINT',
-    () => {
-      void gracefulShutdown('SIGINT');
-    },
-  );
-
-
-  await startProvisioningMode();
+async function startProvisioningService() {
+    logger.info('Checking saved Wi-Fi during boot.');
+    const normalWifiConnected = await waitForNormalWifiConnection(NORMAL_WIFI_WAIT_TIME);
+    if (normalWifiConnected) {
+        logger.info('Saved Wi-Fi connected. Provisioning is not needed.');
+        return;
+    }
+    process.on('SIGTERM', () => {
+        void gracefulShutdown('SIGTERM');
+    });
+    process.on('SIGINT', () => {
+        void gracefulShutdown('SIGINT');
+    });
+    await startProvisioningMode();
 }
-
-
 /*
  * Start the boot-time provisioning check.
  */
 startProvisioningService()
-  .catch(async (error) => {
-
-    const message =
-      error instanceof Error
+    .catch(async (error) => {
+    const message = error instanceof Error
         ? error.message
         : String(error);
-
     logger.error(`Wi-Fi provisioning failed: ${message}`);
-
     await stopProvisioning(1);
-  });
+});
+//# sourceMappingURL=provisioningServer.js.map
