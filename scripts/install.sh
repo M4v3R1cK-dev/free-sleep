@@ -110,37 +110,13 @@ chmod g+s /persistent/free-sleep-data/
 # --------------------------------------------------------------------------------
 # Install server dependencies
 
-BACKUP_PATH="/home/dac/free-sleep-backup/server/package-lock.json"
-NEW_PATH="/home/dac/free-sleep/server/package-lock.json"
-NODE_MODULES_BACKUP="/home/dac/free-sleep-backup/server/node_modules"
-NODE_MODULES_NEW="/home/dac/free-sleep/server/node_modules"
+echo "Installing server dependencies cleanly..."
 
-echo "Reviewing npm dependencies for changes..."
-if [ -f "$BACKUP_PATH" ] && [ -f "$NEW_PATH" ]; then
-  BACKUP_HASH=$(sha256sum "$BACKUP_PATH" | awk '{print $1}')
-  NEW_HASH=$(sha256sum "$NEW_PATH" | awk '{print $1}')
+rm -rf "$SERVER_DIR/node_modules"
 
-  echo "Backup hash: $BACKUP_HASH"
-  echo "New hash: $NEW_HASH"
+sudo -u "$USERNAME" bash -c \
+  "cd '$SERVER_DIR' && /home/$USERNAME/.volta/bin/npm ci"
 
-  if [ "$BACKUP_HASH" != "$NEW_HASH" ]; then
-    echo "package-lock.json changed — running npm install..."
-    sudo -u "$USERNAME" bash -c "cd '$SERVER_DIR' && /home/$USERNAME/.volta/bin/npm install"
-  else
-    echo "package-lock.json unchanged — restoring node_modules from backup..."
-    if [ -d "$NODE_MODULES_BACKUP" ]; then
-      mv "$NODE_MODULES_BACKUP" "$NODE_MODULES_NEW"
-      chown -R "$USERNAME:$USERNAME" "$NODE_MODULES_NEW" || true
-      echo "node_modules restored from backup."
-    else
-      echo "Backup node_modules not found, running npm install instead..."
-      sudo -u "$USERNAME" bash -c "cd '$SERVER_DIR' && /home/$USERNAME/.volta/bin/npm install"
-    fi
-  fi
-else
-  echo "One or both package-lock.json files missing, running npm install..."
-  sudo -u "$USERNAME" bash -c "cd '$SERVER_DIR' && /home/$USERNAME/.volta/bin/npm install"
-fi
 echo ""
 
 # --------------------------------------------------------------------------------
