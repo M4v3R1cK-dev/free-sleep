@@ -76,9 +76,8 @@ export class FrankenMonitor {
     async frankenLoop() {
         const franken = await connectFranken();
         this.deviceStatus = await franken.getDeviceStatus(false);
-        let hasGestures = this.deviceStatus.coverVersion === Version.Pod4 ||
-            this.deviceStatus.coverVersion === Version.Pod5;
-        let waitTime = hasGestures ? 2_000 : 20_000;
+        let hasGestures = this.deviceStatus.coverVersion !== Version.Pod3;
+        let waitTime = hasGestures ? 2_000 : 60_000;
         if (hasGestures) {
             this.deviceStatus = await franken.getDeviceStatus(true);
             logger.debug(`Gestures supported for ${this.deviceStatus.coverVersion}`);
@@ -90,10 +89,8 @@ export class FrankenMonitor {
         while (this.isRunning) {
             try {
                 while (this.isRunning) {
-                    hasGestures =
-                        this.deviceStatus.coverVersion === Version.Pod4 ||
-                            this.deviceStatus.coverVersion === Version.Pod5;
-                    waitTime = hasGestures ? 2_000 : 20_000;
+                    hasGestures = this.deviceStatus.coverVersion !== Version.Pod3;
+                    waitTime = hasGestures ? 2_000 : 60_000;
                     await wait(waitTime);
                     if (!this.isRunning)
                         break;
