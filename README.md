@@ -1,5 +1,51 @@
 # Free Sleep — Local Control for 8 Sleep Pods
 
+> This is a modified fork of Free Sleep. See **About this fork** below for the differences from upstream.
+
+## About this fork
+
+This fork is based on [Free Sleep](https://github.com/throwaway31265/free-sleep) and keeps the original Free Sleep functionality while adding changes focused on easier Pod 3 setup and reliable fully local operation.
+
+### Wi-Fi provisioning
+
+If the Pod cannot connect to a saved Wi-Fi network during boot, this fork automatically starts a temporary setup network:
+
+- Wi-Fi: `FreeSleep-Setup`
+- Setup page: `http://192.168.4.1`
+
+Connect to `FreeSleep-Setup`, open `http://192.168.4.1`, select the home Wi-Fi network and enter its password.
+
+Once the connection succeeds it is saved as `FreeSleep-WiFi` and will reconnect automatically on future boots.
+
+If a saved Wi-Fi connection is already working, the provisioning service exits without starting the setup network.
+
+The setup network is available for ten minutes. If the setup window expires, reboot or power-cycle the Pod to start a fresh setup window.
+
+### Pod 3 WAN blocking fix
+
+The upstream WAN blocking script silently drops blocked outbound traffic.
+
+On the Pod 3 configuration tested with this fork, that could cause the stock `frankenfirmware` process to stall during boot while attempting external connections, resulting in:
+
+- `Franken sock` failing
+- `Franken monitor` not starting
+- device controls being unavailable
+
+This fork rejects blocked outbound WAN traffic immediately instead of silently dropping it.
+
+The Pod remains blocked from WAN access, but failed connections return immediately rather than waiting for network timeouts. This allows the tested Pod 3 configuration to boot successfully with WAN access blocked.
+
+### Installer changes
+
+The installer in this fork:
+
+- installs this fork rather than the upstream repository
+- performs a clean `npm ci` server dependency installation
+- installs and enables the Wi-Fi provisioning service
+- keeps the updater pointed at this fork
+
+---
+
 ## 👀 [Demo App](https://free-sleep.vercel.app/)
 
 ## 💬 [Discord Server](https://discord.gg/JpArXnBgEj)
