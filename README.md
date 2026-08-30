@@ -17,6 +17,8 @@ Connect to `FreeSleep-Setup`, open `http://192.168.4.1`, select the home Wi-Fi n
 
 Once the connection succeeds it is saved as `FreeSleep-WiFi` and will reconnect automatically on future boots.
 
+After the Pod joins the home Wi-Fi, `192.168.4.1` is no longer its address. The home router will normally assign the Pod a new IP address by DHCP. Check the router's connected-device/DHCP-client list to find the Pod, or scan the local network from a computer to identify its IP address. Use that IP address in a browser to open Free Sleep.
+
 If a saved Wi-Fi connection is already working, the provisioning service exits without starting the setup network.
 
 The setup network is available for ten minutes. If the setup window expires, reboot or power-cycle the Pod to start a fresh setup window.
